@@ -49,14 +49,11 @@ def send_to_bubble(record):
         "VOLUME": record["VOLUME"]
     }
 
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        if response.status_code in [200, 201]:
-            print("✅ Sent to Bubble:", payload["SYMBOL"])
-        else:
-            print(f"❌ Error for {payload['SYMBOL']}: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"❌ Exception when sending {payload['SYMBOL']} to Bubble:", e)
+    response = requests.post(url, headers=headers, data=json.dumps(payload))
+    if response.status_code in [200, 201]:
+        print("✅ Sent to Bubble:", payload["SYMBOL"])
+    else:
+        print(f"❌ Error for {payload['SYMBOL']}: {response.status_code} - {response.text}")
 
 def scrape_data():
     print("Scraping data...")
@@ -64,15 +61,16 @@ def scrape_data():
     option.add_argument('--headless')
     option.add_argument('--no-sandbox')
     option.add_argument('--disable-dev-shm-usage')
+    option.add_argument('--disable-gpu')
+    option.add_argument('--remote-debugging-port=9222')
 
-    driver = None
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=option)
 
         driver.get('https://dps.psx.com.pk/trading-panel/')
 
-        WebDriverWait(driver, 15).until(
+        WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.ID, 'tradingBoardTable_length'))
         )
 
@@ -83,9 +81,10 @@ def scrape_data():
             modelSelect.select_by_value('1000')
         except Exception as e:
             print(f"Failed to add/select option: {e}")
+            driver.quit()
             return
 
-        time.sleep(3)  # wait for the table to refresh with new value
+        time.sleep(2)
 
         table = driver.find_element(By.ID, 'tradingBoardTable')
         rows = table.find_element(By.TAG_NAME, 'tbody').find_elements(By.TAG_NAME, 'tr')
@@ -95,27 +94,23 @@ def scrape_data():
         for row in rows:
             cols = row.find_elements(By.TAG_NAME, 'td')
             if len(cols) == 9:
-                try:
-                    record = {
-                        "SYMBOL": cols[0].find_element(By.TAG_NAME, 'strong').text,
-                        "NAME": cols[1].text.strip(),
-                        "BID VOL.": float(cols[2].text.replace(",", "") or 0),
-                        "BID PRICE": float(cols[3].text.replace(",", "") or 0),
-                        "OFFER PRICE": float(cols[4].text.replace(",", "") or 0),
-                        "OFFER VOL.": float(cols[5].text.replace(",", "") or 0),
-                        "LDCP": float(cols[6].text.replace(",", "") or 0),
-                        "CHANGE": float(cols[7].text.replace(",", "") or 0),
-                        "VOLUME": float(cols[8].text.replace(",", "") or 0)
-                    }
-                    send_to_bubble(record)
-                except Exception as e:
-                    print("Skipping row due to parsing error:", e)
+                record = {
+                    "SYMBOL": cols[0].find_element(By.TAG_NAME, 'strong').text,
+                    "NAME": cols[1].text.strip(),
+                    "BID VOL.": float(cols[2].text.replace(",", "") or 0),
+                    "BID PRICE": float(cols[3].text.replace(",", "") or 0),
+                    "OFFER PRICE": float(cols[4].text.replace(",", "") or 0),
+                    "OFFER VOL.": float(cols[5].text.replace(",", "") or 0),
+                    "LDCP": float(cols[6].text.replace(",", "") or 0),
+                    "CHANGE": float(cols[7].text.replace(",", "") or 0),
+                    "VOLUME": float(cols[8].text.replace(",", "") or 0)
+                }
+                send_to_bubble(record)
 
     except Exception as e:
         print(f"An error occurred during scraping: {e}")
     finally:
-        if driver:
-            driver.quit()
+        driver.quit()
 
 if __name__ == "__main__":
     scrape_data()
